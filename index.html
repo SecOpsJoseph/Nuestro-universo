@@ -2,30 +2,36 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Nuestro Universo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#030109">
+<meta name="description" content="Un pequeño universo de recuerdos, estrellas y mensajes para ti.">
+<title>Nuestro Universo | Una historia en estrellas</title>
 <style>
   :root{
     --bg-0: #030109;
     --gold: #f3cd83;
+    --gold-bright: #ffe4a8;
     --text: #f3ece1;
     --text-dim: #b9aec2;
     --card-bg: rgba(12, 6, 22, 0.86);
     --serif: 'Cormorant Garamond', 'Georgia', serif;
     --sans: 'Montserrat', 'Helvetica Neue', sans-serif;
+    color-scheme: dark;
   }
 
-  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; user-select:none; }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
 
   html, body {
-    width:100%; height:100%; overflow:hidden;
+    width:100%; height:100%; min-height:100%; overflow:hidden;
     background: var(--bg-0);
     font-family: var(--sans);
     color: var(--text);
     overscroll-behavior: none;
   }
 
-  #app { position:relative; width:100vw; height:100vh; overflow:hidden; }
+  #app { position:relative; width:100vw; height:100vh; height:100dvh; overflow:hidden; }
+  button { font:inherit; }
+  button:focus-visible { outline:2px solid var(--gold-bright); outline-offset:4px; }
 
   /* ---------- Intro screen (unchanged look) ---------- */
   #intro{
@@ -76,6 +82,9 @@
     margin-top: 1.1rem; font-size: 0.68rem; letter-spacing: 0.12em; color: var(--text-dim);
     opacity:0; animation: fadeUp 1.4s ease forwards 1.5s;
   }
+  .error-message{
+    max-width:32ch; margin-top:1.25rem; color:#ffd0d0; font-size:0.85rem; line-height:1.5;
+  }
 
   /* ---------- 3D universe ---------- */
   #universe{
@@ -84,14 +93,40 @@
     transition: opacity 1.6s ease;
   }
   #universe.active{ opacity:1; pointer-events:auto; }
-  #three-canvas{ position:absolute; inset:0; display:block; touch-action:none; }
+  #three-canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:grab; }
+  #three-canvas:active{ cursor:grabbing; }
 
   .scene-header{
     position:absolute; top: max(env(safe-area-inset-top), 22px); left:0; right:0;
-    text-align:center; z-index:6; pointer-events:none;
+    width:min(240px, 62vw); margin:0 auto; text-align:center; z-index:6; pointer-events:none;
   }
   .scene-header .label{ font-size: 0.62rem; letter-spacing: 0.4em; text-transform:uppercase; color: var(--text-dim); }
   .scene-header .count{ font-family: var(--serif); font-style: italic; font-size: 0.95rem; color: var(--gold); margin-top: 2px; }
+  .progress-track{
+    height:3px; margin:9px auto 0; overflow:hidden; border-radius:99px;
+    background:rgba(243,236,225,0.15); box-shadow:0 0 14px rgba(243,205,131,0.08);
+  }
+  .progress-fill{
+    width:0; height:100%; border-radius:inherit;
+    background:linear-gradient(90deg, #ff6d9c, var(--gold-bright));
+    box-shadow:0 0 12px rgba(243,205,131,0.75); transition:width 0.7s cubic-bezier(.16,1,.3,1);
+  }
+
+  .scene-actions{
+    position:absolute; z-index:7; left: max(env(safe-area-inset-left), 18px);
+    right:max(env(safe-area-inset-right), 18px);
+    bottom:calc(max(env(safe-area-inset-bottom), 20px) + 2.1rem);
+    display:flex; justify-content:space-between; align-items:center; pointer-events:none;
+  }
+  .scene-action{
+    min-height:42px; padding:0.65rem 0.9rem; display:inline-flex; gap:0.5rem; align-items:center;
+    border:1px solid rgba(243,205,131,0.25); border-radius:999px;
+    color:var(--text); background:rgba(12,6,22,0.62); backdrop-filter:blur(12px);
+    -webkit-backdrop-filter:blur(12px); cursor:pointer; pointer-events:auto;
+    font-size:0.67rem; letter-spacing:0.08em; transition:background 0.25s,border-color 0.25s,transform 0.25s;
+  }
+  .scene-action:hover{ background:rgba(243,205,131,0.13); border-color:rgba(243,205,131,0.6); transform:translateY(-2px); }
+  .scene-action .action-icon{ color:var(--gold); font-size:1rem; }
 
   .drag-hint{
     position:absolute; bottom: max(env(safe-area-inset-bottom), 26px); left:0; right:0;
@@ -100,6 +135,38 @@
     opacity:0.85; transition: opacity 1s ease;
   }
   .drag-hint.fade{ opacity:0; }
+
+  #collection{
+    position:fixed; inset:0; z-index:21; display:flex; align-items:center; justify-content:center;
+    padding:7vw; background:rgba(3,1,9,0.68); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    opacity:0; visibility:hidden; pointer-events:none; transition:opacity 0.35s,visibility 0.35s;
+  }
+  #collection.show{ opacity:1; visibility:visible; pointer-events:auto; }
+  .collection-card{
+    width:min(100%, 440px); max-height:min(80dvh, 680px); overflow:auto;
+    padding:1.6rem; border:1px solid rgba(243,205,131,0.2); border-radius:20px;
+    background:linear-gradient(145deg, rgba(25,12,34,0.97), rgba(8,5,17,0.97));
+    box-shadow:0 30px 90px rgba(0,0,0,0.6),0 0 50px rgba(255,61,104,0.08);
+    transform:translateY(14px); transition:transform 0.35s cubic-bezier(.16,1,.3,1);
+  }
+  #collection.show .collection-card{ transform:translateY(0); }
+  .collection-heading{ display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; }
+  .collection-title{ font-family:var(--serif); font-size:1.8rem; font-style:italic; font-weight:400; color:var(--gold-bright); }
+  .collection-subtitle{ margin:0.3rem 0 1.25rem; color:var(--text-dim); font-size:0.78rem; line-height:1.5; }
+  .collection-close{
+    width:38px; height:38px; flex:none; border:1px solid rgba(243,236,225,0.16); border-radius:50%;
+    background:transparent; color:var(--text-dim); cursor:pointer; font-size:1.2rem;
+  }
+  .collection-close:hover{ color:var(--gold); border-color:rgba(243,205,131,0.5); }
+  .memory-list{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0.55rem; }
+  .memory-link{
+    min-height:48px; padding:0.65rem 0.75rem; border:1px solid rgba(243,236,225,0.1);
+    border-radius:12px; background:rgba(255,255,255,0.035); color:var(--text-dim);
+    text-align:left; font-size:0.75rem; cursor:pointer; transition:all 0.2s ease;
+  }
+  .memory-link:hover,.memory-link.discovered{
+    border-color:rgba(243,205,131,0.35); background:rgba(243,205,131,0.08); color:var(--gold-bright);
+  }
 
   /* ---------- Message card ---------- */
   #overlay{
@@ -159,6 +226,18 @@
   }
   #loading.hidden{ opacity:0; }
 
+  @media (max-width:480px){
+    .eyebrow{ letter-spacing:0.32em; }
+    .scene-header{ top:max(env(safe-area-inset-top), 18px); }
+    .scene-header .label{ font-size:0.54rem; letter-spacing:0.3em; }
+    .scene-actions{ left:max(env(safe-area-inset-left), 12px); right:max(env(safe-area-inset-right), 12px); }
+    .scene-action{ min-height:40px; padding:0.6rem 0.75rem; font-size:0.61rem; }
+    .collection-card{ padding:1.25rem; }
+    .memory-list{ gap:0.45rem; }
+    .memory-link{ min-height:46px; padding:0.55rem; font-size:0.68rem; }
+    .card{ padding:2.2rem 1.5rem 1.8rem; }
+  }
+
   @media (prefers-reduced-motion: reduce){
     *{ animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
   }
@@ -174,34 +253,59 @@
     <p class="subtitle">Mientras otros solo reaccionan historias… yo te programé un universo.</p>
     <button id="explorar">Explorar</button>
     <div class="hint">arrastra para moverte por el universo · toca una estrella</div>
+    <p class="error-message" id="errorMessage" role="alert" hidden></p>
   </section>
 
   <!-- 3D universe -->
   <section id="universe">
-    <canvas id="three-canvas"></canvas>
+    <canvas id="three-canvas" tabindex="0" aria-label="Universo 3D. Arrastra para explorar y selecciona una estrella para abrir su recuerdo."></canvas>
     <div id="loading">cargando universo…</div>
     <div class="scene-header">
       <div class="label">estrellas descubiertas</div>
-      <div class="count"><span id="visitedCount">0</span> / <span id="totalCount">0</span></div>
+      <div class="count" aria-live="polite" aria-atomic="true"><span id="visitedCount">0</span> / <span id="totalCount">0</span></div>
+      <div class="progress-track" id="progressTrack" role="progressbar" aria-label="Progreso de exploración" aria-valuemin="0" aria-valuemax="12" aria-valuenow="0">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+    </div>
+    <div class="scene-actions">
+      <button class="scene-action" id="collectionOpen" type="button" aria-haspopup="dialog" aria-controls="collection">
+        <span class="action-icon" aria-hidden="true">✦</span>Constelación
+      </button>
+      <button class="scene-action" id="resetView" type="button">
+        <span class="action-icon" aria-hidden="true">⟳</span>Recentrar
+      </button>
     </div>
     <div class="drag-hint" id="dragHint">arrastra para mirar alrededor · desliza para acercarte</div>
   </section>
 
+  <div id="collection" aria-hidden="true">
+    <section class="collection-card" role="dialog" aria-modal="true" aria-labelledby="collectionTitle" tabindex="-1">
+      <div class="collection-heading">
+        <div>
+          <h2 class="collection-title" id="collectionTitle">Nuestra constelación</h2>
+          <p class="collection-subtitle">Cada estrella guarda un recuerdo. Elige una para volver a leerlo.</p>
+        </div>
+        <button class="collection-close" id="collectionClose" type="button" aria-label="Cerrar constelación">×</button>
+      </div>
+      <div class="memory-list" id="memoryList"></div>
+    </section>
+  </div>
+
   <!-- Message overlay -->
-  <div id="overlay">
-    <div class="card">
-      <div class="card-icon" id="cardIcon">✦</div>
-      <div class="card-eyebrow" id="cardEyebrow">—</div>
-      <div class="card-text" id="cardText">—</div>
-      <button class="card-close" id="cardClose">Cerrar</button>
+  <div id="overlay" aria-hidden="true">
+    <div class="card" role="dialog" aria-modal="true" aria-labelledby="cardEyebrow" aria-describedby="cardText" tabindex="-1">
+      <div class="card-icon" id="cardIcon" aria-hidden="true">✦</div>
+      <h2 class="card-eyebrow" id="cardEyebrow">—</h2>
+      <p class="card-text" id="cardText">—</p>
+      <button class="card-close" id="cardClose" type="button">Cerrar</button>
     </div>
   </div>
 
   <!-- Finale -->
-  <div id="finale">
+  <div id="finale" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="finaleTitle" aria-describedby="finaleText" tabindex="-1">
     <div>
-      <h2>Has recorrido todo nuestro universo</h2>
-      <p>Y aun así, cada día encuentro una estrella nueva que contarte. Te amo.</p>
+      <h2 id="finaleTitle">Has recorrido todo nuestro universo</h2>
+      <p id="finaleText">Y aun así, cada día encuentro una estrella nueva que contarte. Te amo.</p>
     </div>
   </div>
 </div>
@@ -248,9 +352,43 @@
   const visitedCountEl = document.getElementById('visitedCount');
   const totalCountEl = document.getElementById('totalCount');
   const dragHint = document.getElementById('dragHint');
+  const progressTrack = document.getElementById('progressTrack');
+  const progressFill = document.getElementById('progressFill');
+  const errorMessage = document.getElementById('errorMessage');
+  const collection = document.getElementById('collection');
+  const collectionPanel = collection.querySelector('.collection-card');
+  const collectionOpen = document.getElementById('collectionOpen');
+  const collectionClose = document.getElementById('collectionClose');
+  const memoryList = document.getElementById('memoryList');
+  const cardPanel = overlay.querySelector('.card');
+  const STORAGE_KEY = 'nuestro-universo-descubiertas-v1';
 
   totalCountEl.textContent = STARS.length;
-  let visited = new Set();
+  progressTrack.setAttribute('aria-valuemax', STARS.length);
+  let visited = loadVisited();
+  let lastFocusElement = null;
+  let finaleReturnFocus = null;
+
+  function loadVisited(){
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '[]');
+      if (!Array.isArray(saved)) throw new TypeError('El progreso guardado no es una lista.');
+      return new Set(saved.filter(function(idx){
+        return Number.isInteger(idx) && idx >= 0 && idx < STARS.length;
+      }));
+    } catch (error) {
+      console.warn('No se pudo recuperar el progreso de exploración.', error);
+      return new Set();
+    }
+  }
+
+  function saveVisited(){
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(visited)));
+    } catch (error) {
+      console.warn('No se pudo guardar el progreso de exploración.', error);
+    }
+  }
 
   // ================= THREE.JS SCENE =================
   let scene, camera, renderer, clock;
@@ -264,11 +402,12 @@
     initialized = true;
 
     scene = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 3000);
+    const bounds = canvas.getBoundingClientRect();
+    camera = new THREE.PerspectiveCamera(58, bounds.width / bounds.height, 0.1, 3000);
 
     renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, window.innerWidth < 768 ? 1.5 : 2));
+    renderer.setSize(bounds.width, bounds.height);
     renderer.setClearColor(0x030109, 1);
 
     clock = new THREE.Clock();
@@ -282,9 +421,10 @@
   }
 
   function onResize(){
-    camera.aspect = window.innerWidth / window.innerHeight;
+    const bounds = canvas.getBoundingClientRect();
+    camera.aspect = bounds.width / bounds.height;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(bounds.width, bounds.height);
   }
 
   function makeGlowTexture(innerColor, outerColor, size){
@@ -442,8 +582,11 @@
       const y = r * Math.cos(incl) * 0.72;             // flatten a bit vertically
       const z = r * Math.sin(incl) * Math.sin(az);
 
+      const discovered = visited.has(i);
       const spriteMat = new THREE.SpriteMaterial({
-        map: makeGlowTexture('rgba(255,255,255,1)', 'rgba(255,177,153,0.55)', 64),
+        map: discovered
+          ? makeGlowTexture('rgba(243,205,131,1)', 'rgba(243,205,131,0.35)', 64)
+          : makeGlowTexture('rgba(255,255,255,1)', 'rgba(255,177,153,0.55)', 64),
         transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
       });
       const sprite = new THREE.Sprite(spriteMat);
@@ -452,7 +595,7 @@
       sprite.userData.idx = i;
       sprite.userData.baseScale = 3.2;
       group.add(sprite);
-      memoryStars.push({ sprite: sprite, idx: i, visited: false, baseY: y, phase: Math.random()*Math.PI*2 });
+      memoryStars.push({ sprite: sprite, idx: i, visited: discovered, baseY: y, phase: Math.random()*Math.PI*2 });
     }
   }
 
@@ -465,6 +608,8 @@
   let dragging = false, dragMoved = false, downOnCanvas = false;
   let lastX = 0, lastY = 0;
   let pinchDist = null;
+  const activePointers = new Map();
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   function updateCameraFromSpherical(){
     const sinPhi = Math.sin(phi);
@@ -475,45 +620,58 @@
   }
 
   function pointerPos(e){
-    if (e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
     return { x: e.clientX, y: e.clientY };
   }
 
   function onPointerDown(e){
-    dragging = true; dragMoved = false; downOnCanvas = true;
-    const p = pointerPos(e);
-    lastX = p.x; lastY = p.y;
-    lastInteraction = performance.now();
-    if (e.touches && e.touches.length === 2){
-      pinchDist = touchDistance(e.touches);
+    if (overlay.classList.contains('show') || collection.classList.contains('show')) return;
+    canvas.setPointerCapture(e.pointerId);
+    activePointers.set(e.pointerId, pointerPos(e));
+    if (activePointers.size === 1){
+      dragging = true; dragMoved = false; downOnCanvas = true;
+      lastX = e.clientX; lastY = e.clientY;
+    } else if (activePointers.size === 2){
+      dragging = false; dragMoved = true; downOnCanvas = false;
+      pinchDist = pointerDistance();
     }
+    lastInteraction = performance.now();
     hideDragHint();
   }
   function onPointerMove(e){
-    if (e.touches && e.touches.length === 2){
-      const d = touchDistance(e.touches);
+    if (!activePointers.has(e.pointerId)) return;
+    activePointers.set(e.pointerId, pointerPos(e));
+    if (activePointers.size === 2){
+      const d = pointerDistance();
       if (pinchDist != null){
         const delta = d - pinchDist;
         radius = clamp(radius - delta * 0.15, minRadius, maxRadius);
       }
       pinchDist = d;
+      dragMoved = true;
+      lastInteraction = performance.now();
       return;
     }
     if (!dragging) return;
-    const p = pointerPos(e);
-    const dx = p.x - lastX, dy = p.y - lastY;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
     if (Math.abs(dx) + Math.abs(dy) > 3) dragMoved = true;
     theta -= dx * 0.0045;
     phi = clamp(phi - dy * 0.0045, 0.35, Math.PI - 0.35);
-    lastX = p.x; lastY = p.y;
+    lastX = e.clientX; lastY = e.clientY;
     lastInteraction = performance.now();
   }
-  function onPointerUp(e){
-    dragging = false; pinchDist = null;
-    if (downOnCanvas && !dragMoved){
+  function onPointerUp(e, cancelled){
+    if (!activePointers.has(e.pointerId)) return;
+    if (!cancelled && activePointers.size === 1 && downOnCanvas && !dragMoved){
       handleTap(e);
     }
-    downOnCanvas = false;
+    activePointers.delete(e.pointerId);
+    if (activePointers.size === 1){
+      const remaining = activePointers.values().next().value;
+      lastX = remaining.x; lastY = remaining.y;
+      dragging = true; dragMoved = true; downOnCanvas = false;
+    } else {
+      dragging = false; pinchDist = null; downOnCanvas = false;
+    }
     lastInteraction = performance.now();
   }
   function onWheel(e){
@@ -522,9 +680,10 @@
     lastInteraction = performance.now();
     hideDragHint();
   }
-  function touchDistance(touches){
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
+  function pointerDistance(){
+    const points = Array.from(activePointers.values());
+    const dx = points[0].x - points[1].x;
+    const dy = points[0].y - points[1].y;
     return Math.sqrt(dx*dx + dy*dy);
   }
   function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
@@ -537,8 +696,9 @@
 
   function handleTap(e){
     const p = pointerPos(e);
-    ndc.x = (p.x / window.innerWidth) * 2 - 1;
-    ndc.y = -(p.y / window.innerHeight) * 2 + 1;
+    const bounds = canvas.getBoundingClientRect();
+    ndc.x = ((p.x - bounds.left) / bounds.width) * 2 - 1;
+    ndc.y = -((p.y - bounds.top) / bounds.height) * 2 + 1;
     raycaster.setFromCamera(ndc, camera);
     const sprites = memoryStars.map(function(m){ return m.sprite; });
     const hits = raycaster.intersectObjects(sprites, false);
@@ -549,47 +709,117 @@
   }
 
   canvas.addEventListener('pointerdown', onPointerDown);
-  window.addEventListener('pointermove', onPointerMove);
-  window.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', function(e){ onPointerUp(e, false); });
+  canvas.addEventListener('pointercancel', function(e){ onPointerUp(e, true); });
   canvas.addEventListener('wheel', onWheel, { passive:false });
-  canvas.addEventListener('touchstart', function(e){ if (e.touches.length===2) onPointerDown(e); }, { passive:true });
-  canvas.addEventListener('touchmove', function(e){ onPointerMove(e); }, { passive:true });
 
   // ---------------- Card / finale ----------------
   function openCard(idx){
     const star = STARS[idx];
     const rec = memoryStars[idx];
+    if (!star || !rec) return;
+    lastFocusElement = document.activeElement;
     cardIcon.textContent = star.icon;
     cardEyebrow.textContent = star.tag;
     cardText.textContent = star.text;
     overlay.classList.add('show');
+    overlay.setAttribute('aria-hidden', 'false');
+    cardPanel.focus();
 
     if (!rec.visited){
       rec.visited = true;
       visited.add(idx);
-      visitedCountEl.textContent = visited.size;
       rec.sprite.material.map = makeGlowTexture('rgba(243,205,131,1)', 'rgba(243,205,131,0.35)', 64);
       rec.sprite.material.needsUpdate = true;
+      updateProgress();
+      saveVisited();
       if (visited.size === STARS.length){
-        setTimeout(function(){ finale.classList.add('show'); }, 900);
+        setTimeout(function(){
+          finale.classList.add('show');
+          finale.setAttribute('aria-hidden', 'false');
+          finaleReturnFocus = document.activeElement;
+          finale.focus();
+        }, 900);
       }
     }
   }
-  function closeCard(){ overlay.classList.remove('show'); }
+  function closeCard(){
+    overlay.classList.remove('show');
+    overlay.setAttribute('aria-hidden', 'true');
+    if (lastFocusElement instanceof HTMLElement) lastFocusElement.focus();
+  }
+  function openCollection(){
+    collection.classList.add('show');
+    collection.setAttribute('aria-hidden', 'false');
+    collectionPanel.focus();
+  }
+  function closeCollection(){
+    collection.classList.remove('show');
+    collection.setAttribute('aria-hidden', 'true');
+    collectionOpen.focus();
+  }
+  function updateProgress(){
+    const count = visited.size;
+    visitedCountEl.textContent = count;
+    progressTrack.setAttribute('aria-valuenow', count);
+    progressFill.style.width = (count / STARS.length * 100) + '%';
+    memoryList.querySelectorAll('.memory-link').forEach(function(button){
+      const idx = Number(button.dataset.starIndex);
+      const discovered = visited.has(idx);
+      button.classList.toggle('discovered', discovered);
+      button.textContent = (discovered ? '✓ ' : '✧ ') + STARS[idx].tag;
+      button.setAttribute('aria-label', (discovered ? 'Descubierta: ' : 'Por descubrir: ') + STARS[idx].tag);
+    });
+  }
+  STARS.forEach(function(star, idx){
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'memory-link';
+    button.dataset.starIndex = idx;
+    memoryList.appendChild(button);
+  });
+  updateProgress();
+
   cardClose.addEventListener('click', closeCard);
   overlay.addEventListener('click', function(e){ if (e.target === overlay) closeCard(); });
-  finale.addEventListener('click', function(){ finale.classList.remove('show'); });
+  collectionOpen.addEventListener('click', openCollection);
+  collectionClose.addEventListener('click', closeCollection);
+  collection.addEventListener('click', function(e){ if (e.target === collection) closeCollection(); });
+  memoryList.addEventListener('click', function(e){
+    const button = e.target.closest('button[data-star-index]');
+    if (!button) return;
+    closeCollection();
+    openCard(Number(button.dataset.starIndex));
+  });
+  document.getElementById('resetView').addEventListener('click', function(){
+    radius = 62; theta = 0.5; phi = 1.25;
+    lastInteraction = performance.now();
+    updateCameraFromSpherical();
+  });
+  function closeFinale(){
+    finale.classList.remove('show');
+    finale.setAttribute('aria-hidden', 'true');
+    if (finaleReturnFocus instanceof HTMLElement) finaleReturnFocus.focus();
+  }
+  finale.addEventListener('click', closeFinale);
+  document.addEventListener('keydown', function(e){
+    if (e.key !== 'Escape') return;
+    if (finale.classList.contains('show')) closeFinale();
+    else if (overlay.classList.contains('show')) closeCard();
+    else if (collection.classList.contains('show')) closeCollection();
+  });
 
   // ---------------- Animation loop ----------------
   function animate(){
     requestAnimationFrame(animate);
     const t = clock.getElapsedTime();
 
-    if (blackHoleGroup) blackHoleGroup.rotation.y = t * 0.05;
-    if (diskMesh) diskMesh.material.map.offset.x = (t * 0.06) % 1;
+    if (!prefersReducedMotion.matches && blackHoleGroup) blackHoleGroup.rotation.y = t * 0.05;
+    if (!prefersReducedMotion.matches && diskMesh) diskMesh.material.map.offset.x = (t * 0.06) % 1;
 
     // gentle idle auto-rotate when the person isn't dragging
-    if (performance.now() - lastInteraction > 1600){
+    if (!prefersReducedMotion.matches && performance.now() - lastInteraction > 1600){
       theta += 0.0009;
     }
     updateCameraFromSpherical();
@@ -598,9 +828,9 @@
     for (let i = 0; i < memoryStars.length; i++){
       const m = memoryStars[i];
       const s = m.sprite;
-      const bob = Math.sin(t * 0.6 + m.phase) * 0.6;
+      const bob = prefersReducedMotion.matches ? 0 : Math.sin(t * 0.6 + m.phase) * 0.6;
       s.position.y = m.baseY + bob;
-      const pulse = 1 + Math.sin(t * 1.4 + m.phase) * 0.12;
+      const pulse = prefersReducedMotion.matches ? 1 : 1 + Math.sin(t * 1.4 + m.phase) * 0.12;
       s.scale.set(s.userData.baseScale * pulse, s.userData.baseScale * pulse, 1);
     }
     if (farStars) farStars.rotation.y = t * 0.004;
@@ -610,12 +840,20 @@
 
   // ---------------- Boot ----------------
   document.getElementById('explorar').addEventListener('click', function(){
-    introEl.classList.add('hidden');
-    universeEl.classList.add('active');
-    initScene();
-    updateCameraFromSpherical();
-    setTimeout(function(){ loadingEl.classList.add('hidden'); }, 350);
-    setTimeout(hideDragHint, 5000);
+    errorMessage.hidden = true;
+    try {
+      initScene();
+      updateCameraFromSpherical();
+      introEl.classList.add('hidden');
+      universeEl.classList.add('active');
+      setTimeout(function(){ loadingEl.classList.add('hidden'); }, 350);
+      setTimeout(hideDragHint, 5000);
+    } catch (error) {
+      initialized = false;
+      console.error('No se pudo iniciar el universo 3D.', error);
+      errorMessage.textContent = 'No se pudo iniciar el universo 3D. Prueba en un navegador actualizado con WebGL activado.';
+      errorMessage.hidden = false;
+    }
   });
 })();
 </script>
