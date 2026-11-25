@@ -391,11 +391,16 @@
   }
 
   // ================= THREE.JS SCENE =================
-  let scene, camera, renderer, clock;
+  let scene, camera, renderer, clock, renderTarget, lensingScene, lensingCamera, lensingMaterial;
   let starPoints, farStars;
   let blackHoleGroup, horizonMesh, diskMesh, glowSprite;
   let memoryStars = []; // { mesh, idx, visited }
   let initialized = false;
+  const lensCenterWorld = new THREE.Vector3();
+  const lensCenterNdc = new THREE.Vector3();
+  const diskNormalWorld = new THREE.Vector3();
+  const lensAxisWorld = new THREE.Vector3();
+  const lensAxisNdc = new THREE.Vector3();
 
   function initScene(){
     if (initialized) return;
@@ -409,6 +414,7 @@
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, window.innerWidth < 768 ? 1.5 : 2));
     renderer.setSize(bounds.width, bounds.height);
     renderer.setClearColor(0x030109, 1);
+    setupLensingPass(bounds.width, bounds.height);
 
     clock = new THREE.Clock();
 
@@ -425,6 +431,72 @@
     camera.aspect = bounds.width / bounds.height;
     camera.updateProjectionMatrix();
     renderer.setSize(bounds.width, bounds.height);
+    const pixelRatio = renderer.getPixelRatio();
+    renderTarget.setSize(
+      Math.max(1, Math.floor(bounds.width * pixelRatio)),
+      Math.max(1, Math.floor(bounds.height * pixelRatio))
+    );
+    lensingMaterial.uniforms.aspectRatio.value = bounds.width / bounds.height;
+  }
+
+  // Screen-space light bending makes background stars and the far side of the disk wrap around the shadow.
+  function setupLensingPass(width, height){
+    const pixelRatio = renderer.getPixelRatio();
+    renderTarget = new THREE.WebGLRenderTarget(
+      Math.max(1, Math.floor(width * pixelRatio)),
+      Math.max(1, Math.floor(height * pixelRatio)),
+      { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, depthBuffer: true }
+    );
+    renderTarget.texture.generateMipmaps = false;
+    lensingMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        tDiffuse: { value: renderTarget.texture },
+        lensCenter: { value: new THREE.Vector2(0.5, 0.5) },
+        diskAxis: { value: new THREE.Vector2(0, 1) },
+        lensRadius: { value: 0.08 },
+        aspectRatio: { value: width / height },
+      },
+      vertexShader: [
+        'varying vec2 vUv;',
+        'void main(){',
+        '  vUv = uv;',
+        '  gl_Position = vec4(position.xy, 0.0, 1.0);',
+        '}',
+      ].join('\n'),
+      fragmentShader: [
+        'uniform sampler2D tDiffuse;',
+        'uniform vec2 lensCenter;',
+        'uniform vec2 diskAxis;',
+        'uniform float lensRadius;',
+        'uniform float aspectRatio;',
+        'varying vec2 vUv;',
+        'void main(){',
+        '  vec2 delta = vUv - lensCenter;',
+        '  vec2 radial = vec2(delta.x * aspectRatio, delta.y);',
+        '  float distanceToHole = length(radial);',
+        '  vec2 direction = distanceToHole > 0.00001 ? radial / distanceToHole : vec2(0.0, 1.0);',
+        '  float radius = max(lensRadius, 0.002);',
+        '  float influence = 1.0 - smoothstep(radius * 1.15, radius * 5.5, distanceToHole);',
+        '  float bend = min(0.48 * radius * radius / max(distanceToHole, radius * 0.8), 0.12) * influence;',
+        '  vec2 sourceUv = vUv - vec2(direction.x / aspectRatio, direction.y) * bend;',
+        '  vec3 color = texture2D(tDiffuse, clamp(sourceUv, vec2(0.001), vec2(0.999))).rgb;',
+        '  float diskAlignment = abs(dot(direction, normalize(diskAxis)));',
+        '  float farDiskArc = exp(-pow((distanceToHole - radius * 1.22) / (radius * 0.11), 2.0)) * smoothstep(0.68, 0.98, diskAlignment);',
+        '  color += vec3(1.0, 0.38, 0.17) * farDiskArc * 0.24;',
+        '  float photonRing = exp(-pow((distanceToHole - radius * 1.045) / (radius * 0.042), 2.0));',
+        '  color += vec3(1.0, 0.66, 0.38) * photonRing * 0.48;',
+        '  float shadow = 1.0 - smoothstep(radius * 0.985, radius * 1.018, distanceToHole);',
+        '  color *= 1.0 - shadow;',
+        '  gl_FragColor = vec4(color, 1.0);',
+        '}',
+      ].join('\n'),
+      depthTest: false,
+      depthWrite: false,
+    });
+    lensingScene = new THREE.Scene();
+    lensingCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    lensingCamera.position.z = 1;
+    lensingScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), lensingMaterial));
   }
 
   function makeGlowTexture(innerColor, outerColor, size){
@@ -496,26 +568,34 @@
   }
 
   function makeDiskTexture(){
-    const size = 512;
+    const width = 512, height = 128;
     const c = document.createElement('canvas');
-    c.width = size; c.height = 64;
+    c.width = width; c.height = height;
     const ctx = c.getContext('2d');
-    const g = ctx.createLinearGradient(0, 0, size, 0);
-    g.addColorStop(0.00, 'rgba(255,255,255,0)');
-    g.addColorStop(0.06, 'rgba(255,247,224,0.95)');
-    g.addColorStop(0.18, 'rgba(255,196,140,0.95)');
-    g.addColorStop(0.32, 'rgba(255,90,110,0.85)');
-    g.addColorStop(0.46, 'rgba(20,4,14,0)');
-    g.addColorStop(0.54, 'rgba(20,4,14,0)');
-    g.addColorStop(0.68, 'rgba(255,90,110,0.7)');
-    g.addColorStop(0.82, 'rgba(255,196,140,0.95)');
-    g.addColorStop(0.94, 'rgba(255,247,224,0.95)');
-    g.addColorStop(1.00, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, size, 64);
-    // radial falloff across the ring width
+    const image = ctx.createImageData(width, height);
+    for (let y = 0; y < height; y++){
+      const radial = y / (height - 1);
+      const innerFade = Math.max(0, Math.min(1, radial / 0.12));
+      const outerFade = Math.max(0, Math.min(1, (1 - radial) / 0.1));
+      const edgeFade = innerFade * outerFade;
+      const heat = Math.pow(1 - radial, 0.72);
+      for (let x = 0; x < width; x++){
+        const angle = x / width * Math.PI * 2;
+        const flow = angle * 2 + radial * 9 + Math.sin(angle * 3) * 0.4;
+        const turbulence = 0.94 + 0.035 * Math.sin(flow) + 0.025 * Math.sin(angle * 7 - radial * 11);
+        const beaming = 0.78 + 0.22 * Math.max(0, Math.cos(angle - 0.65));
+        const hotspot = Math.pow(Math.max(0, Math.sin(flow * 1.6 + angle)), 8) * 4;
+        const offset = (y * width + x) * 4;
+        image.data[offset] = Math.min(255, 255 * beaming + hotspot);
+        image.data[offset + 1] = Math.min(255, (76 + heat * 166) * beaming + hotspot);
+        image.data[offset + 2] = Math.min(255, (48 + heat * 170) * beaming + hotspot);
+        image.data[offset + 3] = 255 * edgeFade * (0.78 + turbulence * 0.08);
+      }
+    }
+    ctx.putImageData(image, 0, 0);
     const tex = new THREE.CanvasTexture(c);
     tex.wrapS = THREE.RepeatWrapping;
+    tex.flipY = false;
     return tex;
   }
 
@@ -538,31 +618,37 @@
     horizonMesh = new THREE.Mesh(horizonGeo, horizonMat);
     blackHoleGroup.add(horizonMesh);
 
-    // Thin photon ring rim
-    const rimGeo = new THREE.RingGeometry(6.35, 6.6, 64);
-    const rimMat = new THREE.MeshBasicMaterial({
-      color: 0xffd6aa, transparent: true, opacity: 0.35, side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    });
-    const rim = new THREE.Mesh(rimGeo, rimMat);
-    blackHoleGroup.add(rim);
-
-    // Accretion disk (ring), tilted, real depth occlusion against the sphere
-    const diskGeo = new THREE.RingGeometry(8.2, 17, 128, 1);
-    // remap UVs radially so the gradient texture wraps around the ring
+    // The disk's far side is bent around the shadow by the screen-space lensing pass.
+    const innerRadius = 8.2, outerRadius = 18;
+    const angularSegments = 256, radialSegments = 24;
+    const indexedDiskGeo = new THREE.RingGeometry(innerRadius, outerRadius, angularSegments, radialSegments);
+    const diskGeo = indexedDiskGeo.toNonIndexed();
+    indexedDiskGeo.dispose();
     const uv = diskGeo.attributes.uv;
-    const pos = diskGeo.attributes.position;
+    const positions = diskGeo.attributes.position;
     for (let i = 0; i < uv.count; i++){
-      const x = pos.getX(i), y = pos.getY(i);
-      const angle = Math.atan2(y, x);
-      uv.setXY(i, (angle + Math.PI) / (Math.PI * 2), 0.5);
+      const x = positions.getX(i), y = positions.getY(i);
+      uv.setXY(
+        i,
+        (Math.atan2(y, x) + Math.PI) / (Math.PI * 2),
+        (Math.sqrt(x * x + y * y) - innerRadius) / (outerRadius - innerRadius)
+      );
+    }
+    for (let i = 0; i < uv.count; i += 3){
+      const u0 = uv.getX(i), u1 = uv.getX(i + 1), u2 = uv.getX(i + 2);
+      const minU = Math.min(u0, u1, u2), maxU = Math.max(u0, u1, u2);
+      if (maxU - minU > 0.5){
+        if (u0 < 0.5) uv.setX(i, u0 + 1);
+        if (u1 < 0.5) uv.setX(i + 1, u1 + 1);
+        if (u2 < 0.5) uv.setX(i + 2, u2 + 1);
+      }
     }
     const diskMat = new THREE.MeshBasicMaterial({
       map: makeDiskTexture(), transparent: true, side: THREE.DoubleSide,
       depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending,
     });
     diskMesh = new THREE.Mesh(diskGeo, diskMat);
-    diskMesh.rotation.x = Math.PI / 2.35; // tilt like Gargantua
+    diskMesh.rotation.x = Math.PI / 2.35;
     blackHoleGroup.add(diskMesh);
 
     blackHoleGroup.position.set(0, 0, 0);
@@ -835,7 +921,31 @@
     }
     if (farStars) farStars.rotation.y = t * 0.004;
 
+    blackHoleGroup.getWorldPosition(lensCenterWorld);
+    const cameraDistance = camera.position.distanceTo(lensCenterWorld);
+    lensCenterNdc.copy(lensCenterWorld).project(camera);
+    lensingMaterial.uniforms.lensCenter.value.set(
+      lensCenterNdc.x * 0.5 + 0.5,
+      lensCenterNdc.y * 0.5 + 0.5
+    );
+    diskMesh.getWorldDirection(diskNormalWorld);
+    lensAxisWorld.copy(lensCenterWorld).addScaledVector(diskNormalWorld, 10).project(camera);
+    lensAxisNdc.copy(lensAxisWorld).sub(lensCenterNdc);
+    const axisX = lensAxisNdc.x * renderer.domElement.clientWidth / renderer.domElement.clientHeight;
+    const axisY = lensAxisNdc.y;
+    const axisLength = Math.sqrt(axisX * axisX + axisY * axisY);
+    if (axisLength > 0.00001){
+      lensingMaterial.uniforms.diskAxis.value.set(axisX / axisLength, axisY / axisLength);
+    }
+    const horizonRadius = horizonMesh.geometry.parameters.radius;
+    const angularRadius = Math.asin(Math.min(horizonRadius / cameraDistance, 0.99));
+    lensingMaterial.uniforms.lensRadius.value =
+      Math.tan(angularRadius) / (2 * Math.tan(camera.fov * Math.PI / 360));
+
+    renderer.setRenderTarget(renderTarget);
     renderer.render(scene, camera);
+    renderer.setRenderTarget(null);
+    renderer.render(lensingScene, lensingCamera);
   }
 
   // ---------------- Boot ----------------
